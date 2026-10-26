@@ -357,7 +357,11 @@ class MarkdownDocstringCodeModule(pytest.Module):
         _visited_objects.add(id(object))
         docstr = inspect.getdoc(object)
 
-        for member_name, member in inspect.getmembers(object):
+        # Walk __dict__ like doctest.DocTestFinder does, instead of
+        # inspect.getmembers(), so that descriptors are never evaluated.
+        for member in list(getattr(object, "__dict__", {}).values()):
+            if isinstance(member, (staticmethod, classmethod)):
+                member = member.__func__
             if (
                 inspect.isclass(member)
                 or inspect.isfunction(member)
@@ -436,6 +440,9 @@ def pytest_collect_file(
     if parent.config.option.markdowndocs:
         pathlib_path = pathlib.Path(str(file_path))  # pytest 7/8 compat
         if pathlib_path.suffix == ".py":
+            if pathlib_path.name == "__main__.py":
+                # importing it would clash with the running pytest's __main__
+                return None
             return MarkdownDocstringCodeModule.from_parent(parent, path=pathlib_path)
         elif pathlib_path.suffix in (".md", ".mdx", ".svx"):
             return MarkdownTextFile.from_parent(parent, path=pathlib_path)
